@@ -224,18 +224,6 @@ async function lookupOePartNumber(vin, make, categoryKey) {
 
   const browser = await chromium.launch({ headless: false }); // TEMP: visible for selector discovery — revert to true when done
   const page = await browser.newPage();
-
-  // The VIN box worked immediately for a real human but stayed
-  // permanently disabled (not just slow) for this automated browser —
-  // confirmed by testing. That's the standard signature of a site
-  // disabling a form control when it detects navigator.webdriver (which
-  // Playwright sets to true by default), an off-the-shelf anti-bot check
-  // unrelated to Partslink24's explicit written permission to automate
-  // this lookup. Spoof it so the page doesn't lock the field.
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-  });
-
   const triedTerms = [];
 
   try {
