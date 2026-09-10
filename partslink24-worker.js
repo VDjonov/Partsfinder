@@ -125,6 +125,25 @@ const VIN_INPUT_SELECTOR = 'input[placeholder="Direct entry"]';
  * Mechanical → Braking → "FRONT BRAKES DISC CALIPER FRICTION PAD".
  * Each step is a click on a visibly-labelled row in the next column.
  */
+async function clickCategoryItem(page, label) {
+  const target =
+    typeof label === "string"
+      ? page.getByText(label, { exact: true }).first()
+      : page.getByText(label).first();
+
+  await target.waitFor({ state: "visible", timeout: 15000 });
+  try {
+    await target.click({ timeout: 5000 });
+  } catch {
+    // The label text sits in a <span> that a transparent sibling div
+    // covers, so a real mouse click never reaches it. Dispatch the click
+    // straight at the element instead — it still bubbles to whatever
+    // ancestor holds the handler.
+    await target.dispatchEvent("click");
+  }
+  await page.waitForLoadState("networkidle");
+}
+
 async function openAssembly(page, category) {
   if (!category.scope || !category.mainGroup || !category.assembly) {
     throw new Error("This category has no verified category-tree path configured yet.");
@@ -138,16 +157,13 @@ async function openAssembly(page, category) {
     .waitFor({ state: "hidden", timeout: 15000 })
     .catch(() => {});
 
-  await page.getByText(category.scope, { exact: true }).first().click();
-  await page.waitForLoadState("networkidle");
+  await clickCategoryItem(page, category.scope);
   console.log(`[debug] clicked scope "${category.scope}"`);
 
-  await page.getByText(category.mainGroup, { exact: true }).first().click();
-  await page.waitForLoadState("networkidle");
+  await clickCategoryItem(page, category.mainGroup);
   console.log(`[debug] clicked main group "${category.mainGroup}"`);
 
-  await page.getByText(category.assembly).first().click();
-  await page.waitForLoadState("networkidle");
+  await clickCategoryItem(page, category.assembly);
   console.log(`[debug] clicked assembly matching ${category.assembly}`);
 }
 
