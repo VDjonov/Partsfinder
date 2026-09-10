@@ -1,94 +1,117 @@
-# Partslink24 OE part number test tool
+# Partslink24 OE part number finder
 
-Standalone tool to test looking up an OE part number from Partslink24,
-given a Motorcheck-format vehicle data dump.
+Look up an OE part number from Partslink24 by VIN, describing the part in
+plain words. Built for a parts counter: type "egr valve" or "front brake
+disc", get the number.
 
 ## Setup (run this on your own machine, not in a sandbox)
 
 1. Install dependencies:
    npm install
-
-2. Install the headless browser Playwright needs:
    npx playwright install chromium
 
-3. Set your credentials as environment variables (the portal login form
-   has three fields — Company ID / partslink24 ID, User name, Password).
-
-   macOS/Linux:
-   export PARTSLINK_COMPANY_ID="your-company-id"
-   export PARTSLINK_USERNAME="your-username"
-   export PARTSLINK_PASSWORD="your-password"
+2. Set your credentials. The Partslink24 login has three fields (Company
+   ID / partslink24 ID, User name, Password), and the AI lookup needs an
+   Anthropic API key.
 
    Windows PowerShell (per terminal session):
    $env:PARTSLINK_COMPANY_ID="your-company-id"
    $env:PARTSLINK_USERNAME="your-username"
    $env:PARTSLINK_PASSWORD="your-password"
+   $env:ANTHROPIC_API_KEY="sk-ant-..."
 
-`front_brake_disc` is filled in and verified against the real,
-logged-in portal. Any other category you add needs the same treatment —
-see "Adding more part categories" below.
+   macOS/Linux:
+   export PARTSLINK_COMPANY_ID="your-company-id"
+   export PARTSLINK_USERNAME="your-username"
+   export PARTSLINK_PASSWORD="your-password"
+   export ANTHROPIC_API_KEY="sk-ant-..."
 
-## Running a test lookup
+## The search bar
 
-   node find-oe-part.js sample-vehicle.txt front_brake_disc
+    npm start
 
-This will:
-- Parse the vehicle data in sample-vehicle.txt (already includes the
-  Peugeot 5008 / VIN VF30E9HZHAS110949 example)
-- Extract the VIN and make
-- Log into Partslink24, open that make's catalog from the dashboard,
-  search the VIN, then walk the catalog's category tree to the relevant
-  assembly (e.g. Mechanical > Braking > Front brakes) and read its parts
-- Print the result as JSON
+Then open http://localhost:3000. Paste a vehicle dump, type what you're
+after, get the number back — along with the path it took through the
+catalog, so you can check its working.
 
-The result is one of:
-- `{ success: true, oeNumber, candidates }` — exactly one genuine OE part
-  matched.
-- `{ success: false, ambiguous: true, candidates, ... }` — more than one
-  non-alternate-brand part matched (e.g. different engine/trim variants
-  of the same position). Only a human with the actual vehicle/engine in
-  front of them can safely pick the right one from `candidates` — the
-  tool never guesses in this case.
-- `{ success: false, error }` — nothing matched in that assembly.
+## Command line
 
-A verified example — `node find-oe-part.js sample-vehicle.txt front_brake_disc`
-returns:
+    node ask.js sample-vehicle.txt "egr valve"
+    node ask.js sample-vehicle.txt "front brake disc"
 
-    {
-      "success": true,
-      "oeNumber": "4249 17",
-      "candidates": [
-        {
-          "partNo": "4249 17",
-          "description": "2 FRONT DISKS KIT, VENTILATED",
-          "remark": "DIAM 283 EP 26",
-          "restrictions": null
-        }
-      ]
-    }
+Same thing without the browser UI.
 
-Note the tool deliberately ignores the site's own free-text parts search:
-it word-matches too loosely to trust (searching "front brake disc"
-returns a rear disc protector, brake hoses and wheel hubs, but no front
-brake disc).
+## How it works, and why
 
-## Debugging a failed run
+Getting to a part means logging in, opening the right brand's catalog,
+entering the VIN, and walking a category tree. The navigation is
+scripted — it's the same every time, so there's no reason to pay a model
+to do it. The *decisions* are Claude's: which scope, which main group,
+which assembly, and which row is the part rather than a neighbouring one.
 
-The browser runs headless. To watch a run, flip `headless` to `false` in
-`partslink24-worker.js`. On any failure the worker also writes
-`debug-failure.png`, a screenshot of the page at the moment it gave up,
-which is usually enough to see what went wrong.
+Two approaches were tried first and rejected, both worth knowing about
+before changing anything:
+
+**The catalog's own parts search word-matches, and can't be trusted.**
+Searching "front brake disc" on a Peugeot 5008 returns a rear disc
+protector, brake hoses and wheel hubs — no front brake disc anywhere in
+the results. Searching "egr valve" walks into MECHANICAL > ENGINE >
+VALVES GUIDE ROCKER GEAR, the engine's valvetrain, which shares the word
+"valve" and nothing else.
+
+**Keyword rules per part don't scale and still get it wrong.** Every
+manufacturer words and organises its catalog differently, so a rule set
+that finds brakes on a Peugeot finds nothing on a BMW. Writing them by
+hand means walking the tree for each part on each model — and whoever
+does that walk already has the part number, so the tool has saved
+nothing. It also can't tell an EGR valve from a poppet valve, which is
+what sank it in testing.
+
+Letting a model read the labels fixes both: catalog wording varies, and
+judging wording is what models are good at. What you maintain is
+nothing — no per-part, per-model or per-brand configuration.
+
+## What it returns
+
+A part number, its description and remark (e.g. "DIAM 283 EP 26" — the
+disc diameter and thickness), a confidence level, the reasoning, and any
+alternative versions of the same part. Where several parts genuinely fit
+a position and only the engine variant in front of you decides between
+them, it says so instead of guessing.
+
+Treat anything below high confidence as needing a look. The reasoning
+and the navigation trail are shown precisely so a wrong answer is
+obvious rather than plausible.
 
 ## Adding your own vehicle
 
-Paste a new Motorcheck-format dump into a text file (same format as
-sample-vehicle.txt) and pass that filename instead.
+Paste a Motorcheck-format dump into a text file (same format as
+sample-vehicle.txt) and pass that filename. The search bar also accepts a
+pasted dump directly.
 
-## Adding more part categories
+## Debugging a failed run
 
-Edit PART_CATEGORIES in partslink24-worker.js. Walk the catalog to that
-part manually first, noting the three labels you clicked (`scope`,
-`mainGroup`, `assembly` — e.g. Mechanical / Braking / "FRONT BRAKES DISC
-CALIPER FRICTION PAD"), then set `descriptionInclude` and
-`descriptionExclude` to isolate the specific part within that assembly's
-rows. Watch the catalog's own spelling — it writes "DISKS", not "discs".
+The browser runs headless. To watch it, flip `headless` to `false` in
+`partslink24-worker.js`. On any failure a screenshot of the page is
+written to `debug-failure.png`, which usually shows what went wrong.
+
+Several selectors are absolute XPaths — the login fields especially — so
+a Partslink24 front-end change can break them. The screenshot plus a
+headed run is the fastest way to find which one.
+
+## The other two lookups
+
+`find-oe-part.js` and `find-part.js` are the earlier approaches, kept
+because the first is fully verified and useful as a check:
+
+    node find-oe-part.js sample-vehicle.txt front_brake_disc
+
+walks a hardcoded category path (Mechanical > Braking > Front brakes) and
+returns `4249 17` for the sample vehicle. It only knows the parts listed
+in `PART_CATEGORIES`, but when it answers, it answers deterministically —
+handy for confirming the catalog still behaves as expected after a
+Partslink24 change.
+
+`node test-vocabulary.js` checks the keyword rules in
+`part-vocabulary.js` against real catalog descriptions. No browser or
+credentials needed.

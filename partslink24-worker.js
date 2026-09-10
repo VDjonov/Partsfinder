@@ -196,6 +196,30 @@ async function readRowField(row, testId) {
   return (await row.locator(`[data-testid="${testId}"]`).textContent({ timeout: 2000 }).catch(() => null))?.trim();
 }
 
+/**
+ * Every part row of whichever assembly is currently open, de-duplicated
+ * by part number (the panel renders the same part more than once).
+ */
+async function readAssemblyParts(page) {
+  await closeVehiclePanel(page);
+  await page.locator('[data-testid="row"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+
+  const byPartNo = new Map();
+  for (const row of await page.locator('[data-testid="row"]').all()) {
+    const partNo = await readRowField(row, "partnoValue");
+    const description = await readRowField(row, "descriptionValue");
+    if (!partNo || !description || byPartNo.has(partNo)) continue;
+
+    byPartNo.set(partNo, {
+      partNo,
+      description,
+      remark: (await readRowField(row, "remarkValue")) || null,
+      restrictions: (await readRowField(row, "restrictionValue")) || null,
+    });
+  }
+  return [...byPartNo.values()];
+}
+
 async function extractMatchingCandidates(page, descriptionInclude, descriptionExclude) {
   await closeVehiclePanel(page);
 
@@ -445,10 +469,11 @@ async function openVehicleCatalog(page, vin, make) {
 module.exports = {
   lookupOePartNumber,
   PART_CATEGORIES,
-  // Shared with the experimental vocabulary-driven lookup.
+  // Shared with the other lookup strategies.
   openVehicleCatalog,
   launchCatalogBrowser,
   closeVehiclePanel,
+  readAssemblyParts,
   readRowField,
   politeDelay,
   credentialsConfigured,
