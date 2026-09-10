@@ -192,29 +192,24 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
   await page.locator('[data-testid="row"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
 
   const rows = await page.locator('[data-testid="row"]').all();
-  console.log(`[debug] found ${rows.length} parts rows`);
-  if (rows.length > 0) {
-    const innerTestIds = await rows[0]
-      .locator("[data-testid]")
-      .evaluateAll((els) => [...new Set(els.map((el) => el.getAttribute("data-testid")))])
-      .catch(() => []);
-    console.log(`[debug] field testids inside the first row: ${innerTestIds.join(", ") || "(none)"}`);
-  }
 
-  const candidates = [];
+  // Keyed by part number: the panel renders the same part in more than
+  // one row, and a repeated number is the same part, not a second
+  // candidate to put in front of a human.
+  const byPartNo = new Map();
 
   // Short timeouts: a row is already rendered by the time we get here,
   // so a missing field means it isn't there at all. Waiting the default
-  // 30s per field would stall for minutes on a table of the wrong shape.
+  // 30s per field would stall for minutes. Rows come in several shapes
+  // (headings, spacers), and only ones carrying a part number matter.
   const readField = async (row, testId) =>
     (await row.locator(`[data-testid="${testId}"]`).textContent({ timeout: 2000 }).catch(() => null))?.trim();
 
   for (const row of rows) {
     const partNo = await readField(row, "partnoValue");
     const description = await readField(row, "descriptionValue");
-    const restrictions = await readField(row, "restrictionValue");
 
-    if (!partNo || !description) continue;
+    if (!partNo || !description || byPartNo.has(partNo)) continue;
 
     const descLower = description.toLowerCase();
     const isOE = !descLower.includes("eurorepar");
@@ -223,9 +218,18 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
     const matchesExclude = descriptionExclude.some((kw) => descLower.includes(kw.toLowerCase()));
 
     if (isOE && matchesInclude && !matchesExclude) {
-      candidates.push({ partNo, description, restrictions: restrictions || null });
+      byPartNo.set(partNo, {
+        partNo,
+        description,
+        // e.g. "DIAM 283 EP 26" — disc diameter/thickness, which is what
+        // distinguishes otherwise identical-looking variants.
+        remark: (await readField(row, "remarkValue")) || null,
+        restrictions: (await readField(row, "restrictionValue")) || null,
+      });
     }
   }
+
+  const candidates = [...byPartNo.values()];
 
   if (rows.length > 0 && candidates.length === 0) {
     const sample = await rows[0].innerText().catch(() => "(unreadable)");
@@ -246,7 +250,7 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
  * @returns {Promise<{
  *   success: boolean,
  *   oeNumber?: string,
- *   candidates?: Array<{ partNo: string, description: string, restrictions: string|null }>,
+ *   candidates?: Array<{ partNo: string, description: string, remark: string|null, restrictions: string|null }>,
  *   ambiguous?: boolean,
  *   error?: string,
  * }>}
