@@ -84,7 +84,13 @@ const CATEGORY_SYNONYMS = {
 };
 
 // Real selectors, found by inspecting the live portal.
-const VIN_INPUT_SELECTOR = '[data-testid="vehicleSearchInput"] input';
+//
+// Login lands you on partslink24.com/portal-ui — a brand-selection
+// dashboard, NOT a specific vehicle's catalog. That page has its own
+// "Chassis number" search box; submitting a VIN there navigates into the
+// correct brand's catalog page (e.g. pl24-app/peugeot_parts/<vin>/0/vehicle),
+// which is where the "Search for parts" box below actually lives.
+const VIN_INPUT_SELECTOR = 'input[placeholder="Chassis number"]';
 const SEARCH_PARTS_INPUT_XPATH =
   "xpath=/html/body/div[1]/div/div[3]/header/div/div/div/div[1]/div/div[2]/div/div/div/input";
 
@@ -199,10 +205,16 @@ async function lookupOePartNumber(vin, categoryKey) {
     // sits on top of the login form. Dismiss it before touching the form.
     // If it doesn't appear (e.g. consent already granted in this context),
     // this just times out quickly and we move on.
-    const CONSENT_ACCEPT_ALL_XPATH =
-      "xpath=/html/body/div[2]//div/div/div[2]/div/div[2]/div/div[2]/div/div/div[2]/div/button[3]";
+    //
+    // This banner is very likely rendered inside a shadow DOM (typical
+    // for Usercentrics), which a plain XPath cannot see into no matter
+    // how long you wait — that's why an XPath-based click on it never
+    // worked here even with a generous timeout. Playwright's role/text
+    // locators pierce shadow roots automatically, so use one of those
+    // instead of XPath for this specific element.
     await page
-      .click(CONSENT_ACCEPT_ALL_XPATH, { timeout: 15000 })
+      .getByRole("button", { name: "Accept All", exact: true })
+      .click({ timeout: 15000 })
       .catch(() => {});
 
     // Real selectors, found by inspecting the live login form (a custom
