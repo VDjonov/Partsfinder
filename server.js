@@ -100,7 +100,7 @@ function render(data) {
   if (!data.success) {
     return '<div class="card err"><strong>Not found.</strong><p>' + esc(data.error) + '</p>'
       + (data.reasoning ? '<p class="muted">' + esc(data.reasoning) + '</p>' : '')
-      + trail(data.path) + '</div>';
+      + trail(data.path) + cost(data.cost) + '</div>';
   }
 
   const part = data.part || {};
@@ -117,7 +117,13 @@ function render(data) {
           + '</ul>'
         : '')
     + trail(data.path)
+    + cost(data.cost)
     + '</div>';
+}
+
+function cost(c) {
+  if (!c) return '';
+  return '<p class="muted">Lookup cost $' + c.costUsd.toFixed(4) + '</p>';
 }
 
 function trail(path) {

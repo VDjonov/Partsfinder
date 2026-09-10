@@ -16,12 +16,48 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { z } = require("zod");
 const { zodOutputFormat } = require("@anthropic-ai/sdk/helpers/zod");
 
-const MODEL = "claude-opus-5";
+// Picking "Engine" out of six category labels is an easy call, and there
+// are three of them per lookup — Sonnet at low effort handles those. The
+// final "which of these rows IS the part" decision is the one where being
+// wrong means a returned part, so it gets Opus at full effort. That split
+// is most of the difference between ~$0.20 and ~$0.05 a lookup.
+const NAVIGATION_MODEL = "claude-sonnet-5";
+const PART_MODEL = "claude-opus-5";
+
+// USD per million tokens, for reporting what a lookup actually cost.
+const PRICES = {
+  "claude-sonnet-5": { input: 2, output: 10 },
+  "claude-opus-5": { input: 5, output: 25 },
+};
 
 // Returned when nothing on offer fits, rather than forcing a bad pick.
 const NONE = "NONE";
 
 const client = new Anthropic();
+
+let usage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+
+function resetUsage() {
+  usage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+}
+
+function getUsage() {
+  return { ...usage, costUsd: Number(usage.costUsd.toFixed(4)) };
+}
+
+function recordUsage(model, responseUsage) {
+  if (!responseUsage) return;
+  const price = PRICES[model];
+  const inputTokens = responseUsage.input_tokens ?? 0;
+  const outputTokens = responseUsage.output_tokens ?? 0;
+
+  usage.calls += 1;
+  usage.inputTokens += inputTokens;
+  usage.outputTokens += outputTokens;
+  if (price) {
+    usage.costUsd += (inputTokens / 1e6) * price.input + (outputTokens / 1e6) * price.output;
+  }
+}
 
 /**
  * Turn SDK errors into something a person at a parts counter can act on.
@@ -30,7 +66,9 @@ const client = new Anthropic();
  */
 async function callClaude(request) {
   try {
-    return await client.messages.parse(request);
+    const response = await client.messages.parse(request);
+    recordUsage(request.model, response.usage);
+    return response;
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
       throw new Error(
@@ -73,7 +111,7 @@ const PartChoiceSchema = z.object({
  */
 async function chooseCategory(partQuery, columnName, options) {
   const response = await callClaude({
-    model: MODEL,
+    model: NAVIGATION_MODEL,
     max_tokens: 16000,
     system:
       "You navigate manufacturer parts catalogs. Given a part a mechanic is looking for and the " +
@@ -91,7 +129,7 @@ async function chooseCategory(partQuery, columnName, options) {
           "Answer with the option text exactly as written above.",
       },
     ],
-    output_config: { format: zodOutputFormat(ChoiceSchema) },
+    output_config: { effort: "low", format: zodOutputFormat(ChoiceSchema) },
   });
 
   const parsed = response.parsed_output;
@@ -115,7 +153,7 @@ async function chooseCategory(partQuery, columnName, options) {
  */
 async function choosePart(partQuery, parts) {
   const response = await callClaude({
-    model: MODEL,
+    model: PART_MODEL,
     max_tokens: 16000,
     system:
       "You identify parts in manufacturer catalogs. Given a part a mechanic wants and the contents " +
@@ -148,4 +186,4 @@ async function choosePart(partQuery, parts) {
   return parsed;
 }
 
-module.exports = { chooseCategory, choosePart };
+module.exports = { chooseCategory, choosePart, resetUsage, getUsage };

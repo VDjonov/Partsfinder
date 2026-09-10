@@ -71,6 +71,22 @@ Letting a model read the labels fixes both: catalog wording varies, and
 judging wording is what models are good at. What you maintain is
 nothing — no per-part, per-model or per-brand configuration.
 
+## What a lookup costs
+
+Every lookup prints its real cost, and the search bar shows it, so you
+can measure rather than estimate.
+
+Four decisions are made per lookup. The three navigation picks ("which
+category leads to an EGR valve?") go to Sonnet at low effort — easy calls
+made three times. The final "which of these rows IS the part" decision
+goes to Opus at full effort, because that's the one where being wrong
+means a returned part. Expect roughly $0.05 a lookup, so about 100 on $5.
+
+Most of the bill is the model's reasoning, not the text sent to it. If
+you need it cheaper, lowering `PART_MODEL` to `claude-sonnet-5` in
+`ai-matcher.js` roughly halves it again; check the printed costs before
+and after rather than taking that on trust.
+
 ## What it returns
 
 A part number, its description and remark (e.g. "DIAM 283 EP 26" — the

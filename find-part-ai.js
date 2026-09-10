@@ -22,7 +22,7 @@ const {
   politeDelay,
   credentialsConfigured,
 } = require("./partslink24-worker");
-const { chooseCategory, choosePart } = require("./ai-matcher");
+const { chooseCategory, choosePart, resetUsage, getUsage } = require("./ai-matcher");
 
 /**
  * Everything on screen that looks selectable. Deliberately over-collects
@@ -72,7 +72,22 @@ async function findPart(vin, make, partQuery) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
 
   await politeDelay();
+  resetUsage();
   const { browser, page } = await launchCatalogBrowser();
+
+  let result;
+  try {
+    result = await runLookup(page, partQuery, vin, make);
+  } finally {
+    await browser.close();
+  }
+
+  const cost = getUsage();
+  console.log(`cost: $${cost.costUsd.toFixed(4)} (${cost.calls} calls, ${cost.inputTokens} in / ${cost.outputTokens} out)`);
+  return { ...result, cost };
+}
+
+async function runLookup(page, partQuery, vin, make) {
   const path = [];
 
   try {
@@ -141,8 +156,6 @@ async function findPart(vin, make, partQuery) {
     // Errors raised deliberately (a bad API key, a missing option) already
     // say what to do; only browser-level failures need the screenshot.
     return { success: false, error: err.message || "Lookup failed — see debug-failure.png.", path };
-  } finally {
-    await browser.close();
   }
 }
 
