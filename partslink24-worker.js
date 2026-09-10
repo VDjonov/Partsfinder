@@ -162,13 +162,8 @@ async function openAssembly(page, category) {
     .catch(() => {});
 
   await clickCategoryItem(page, category.scope);
-  console.log(`[debug] clicked scope "${category.scope}"`);
-
   await clickCategoryItem(page, category.mainGroup);
-  console.log(`[debug] clicked main group "${category.mainGroup}"`);
-
   await clickCategoryItem(page, category.assembly);
-  console.log(`[debug] clicked assembly matching ${category.assembly}`);
 }
 
 /**
@@ -233,7 +228,9 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
 
   if (rows.length > 0 && candidates.length === 0) {
     const sample = await rows[0].innerText().catch(() => "(unreadable)");
-    console.log(`[debug] no row matched the filters. First row reads:\n${sample}`);
+    console.error(
+      `The assembly had ${rows.length} rows but none matched this category's description filters. First row reads:\n${sample}`,
+    );
   }
 
   return candidates;
@@ -275,12 +272,11 @@ async function lookupOePartNumber(vin, make, categoryKey) {
 
   await politeDelay();
 
-  const browser = await chromium.launch({ headless: false }); // TEMP: visible for selector discovery — revert to true when done
-  // Playwright's default browser window is smaller than a typical desktop
-  // window. The real site appends a "desktop=true" URL param once it's
-  // decided it's looking at a real desktop browser, and the VIN field
-  // stayed disabled specifically in Playwright's default-sized window —
-  // set a realistic desktop viewport to match a normal browser window.
+  // Flip headless off when you need to watch a run to debug it.
+  const browser = await chromium.launch({ headless: true });
+  // The catalog is responsive: narrow windows stack the parts panel into
+  // cards, wide ones render it as a table. The selectors here were built
+  // against the wide layout, so pin a desktop-sized viewport.
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const page = await context.newPage();
 
@@ -349,20 +345,14 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     // page before treating login as complete.
     await page.waitForFunction(() => !location.pathname.endsWith("/en/index.html"), null, { timeout: 15000 });
 
-    console.log(`[debug] URL right after login: ${page.url()}`);
-
     // --- OPEN THE VEHICLE'S BRAND CATALOG ---
     // Neither a direct page.goto() to a brand URL nor trusting login's
     // own redirect reliably reaches the real (non-Demo) catalog — both
-    // were confirmed live to land on a broken, permanently-disabled
-    // Demo version. The one flow confirmed to work is: land on the real
+    // were confirmed live to land on a Demo version whose VIN field is
+    // permanently disabled. The flow that works is: land on the real
     // portal-ui dashboard, then click the brand tile from within that
-    // already-loaded page (an in-app navigation), same as manual use.
-    // Force navigation to the dashboard and verify we actually land
-    // there — if login bounces us back to the login page instead, that
-    // itself is useful diagnostic information.
+    // already-loaded page, same as manual use.
     await page.goto("https://www.partslink24.com/portal-ui", { waitUntil: "networkidle" });
-    console.log(`[debug] URL after navigating to portal-ui: ${page.url()}`);
     if (!page.url().includes("/portal-ui")) {
       throw new Error(`Expected to land on portal-ui but got redirected to: ${page.url()}`);
     }
@@ -377,7 +367,6 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     }
     await brandTile.click();
     await page.waitForLoadState("networkidle");
-    console.log(`[debug] URL after clicking the ${make} brand tile: ${page.url()}`);
 
     // --- SEARCH THE VIN (once per session) ---
     await typeRealistically(page, VIN_INPUT_SELECTOR, vin);

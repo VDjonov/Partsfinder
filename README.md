@@ -11,16 +11,22 @@ given a Motorcheck-format vehicle data dump.
 2. Install the headless browser Playwright needs:
    npx playwright install chromium
 
-3. `front_brake_disc` is filled in and verified against the real,
-   logged-in Partslink24 portal. Any other category key you add to
-   PART_CATEGORIES in `partslink24-worker.js` needs the same treatment —
-   see "Adding more part categories" below.
+3. Set your credentials as environment variables (the portal login form
+   has three fields — Company ID / partslink24 ID, User name, Password).
 
-4. Set your credentials as environment variables (the portal login form
-   has three fields — Company ID / partslink24 ID, User name, Password):
+   macOS/Linux:
    export PARTSLINK_COMPANY_ID="your-company-id"
    export PARTSLINK_USERNAME="your-username"
    export PARTSLINK_PASSWORD="your-password"
+
+   Windows PowerShell (per terminal session):
+   $env:PARTSLINK_COMPANY_ID="your-company-id"
+   $env:PARTSLINK_USERNAME="your-username"
+   $env:PARTSLINK_PASSWORD="your-password"
+
+`front_brake_disc` is filled in and verified against the real,
+logged-in portal. Any other category you add needs the same treatment —
+see "Adding more part categories" below.
 
 ## Running a test lookup
 
@@ -45,10 +51,33 @@ The result is one of:
   tool never guesses in this case.
 - `{ success: false, error }` — nothing matched in that assembly.
 
+A verified example — `node find-oe-part.js sample-vehicle.txt front_brake_disc`
+returns:
+
+    {
+      "success": true,
+      "oeNumber": "4249 17",
+      "candidates": [
+        {
+          "partNo": "4249 17",
+          "description": "2 FRONT DISKS KIT, VENTILATED",
+          "remark": "DIAM 283 EP 26",
+          "restrictions": null
+        }
+      ]
+    }
+
 Note the tool deliberately ignores the site's own free-text parts search:
 it word-matches too loosely to trust (searching "front brake disc"
 returns a rear disc protector, brake hoses and wheel hubs, but no front
 brake disc).
+
+## Debugging a failed run
+
+The browser runs headless. To watch a run, flip `headless` to `false` in
+`partslink24-worker.js`. On any failure the worker also writes
+`debug-failure.png`, a screenshot of the page at the moment it gave up,
+which is usually enough to see what went wrong.
 
 ## Adding your own vehicle
 
