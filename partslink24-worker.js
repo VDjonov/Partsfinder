@@ -270,26 +270,35 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     await page.click(LOGIN_CONFIRM_XPATH);
     await page.waitForLoadState("networkidle");
 
+    console.log(`[debug] URL right after login+confirm: ${page.url()}`);
+
     // --- OPEN THE VEHICLE'S BRAND CATALOG ---
-    // Confirmed live: the server forces a redirect on login/re-auth
-    // regardless of which page is requested afterward, and lands on a
-    // long encoded-token brand-catalog URL (pl24-app/peugeot_parts/0/eyJ...)
-    // that behaves differently (permanently disabled VIN field, Demo
-    // watermark) from the plain URL a real dashboard brand-tile click
-    // produces (pl24-app/peugeot_parts/0/0?lang=en&desktop=true). Since
-    // clicking through the dashboard still gets swept into that same
-    // redirect, navigate directly to the known-good plain URL pattern
-    // instead of clicking anything.
-    //
-    // NOT YET VALIDATED for brands whose name doesn't map this simply to
-    // a URL slug (e.g. multi-word makes) — if this 404s or misroutes for
-    // another vehicle's make, inspect the real slug for that brand
-    // (click its tile manually and read the resulting URL) and adjust
-    // this slug derivation.
-    const brandSlug = make.trim().toLowerCase().replace(/\s+/g, "_");
-    await page.goto(`https://www.partslink24.com/pl24-app/${brandSlug}_parts/0/0?lang=en&desktop=true`, {
-      waitUntil: "networkidle",
-    });
+    // Neither a direct page.goto() to a brand URL nor trusting login's
+    // own redirect reliably reaches the real (non-Demo) catalog — both
+    // were confirmed live to land on a broken, permanently-disabled
+    // Demo version. The one flow confirmed to work is: land on the real
+    // portal-ui dashboard, then click the brand tile from within that
+    // already-loaded page (an in-app navigation), same as manual use.
+    // Force navigation to the dashboard and verify we actually land
+    // there — if login bounces us back to the login page instead, that
+    // itself is useful diagnostic information.
+    await page.goto("https://www.partslink24.com/portal-ui", { waitUntil: "networkidle" });
+    console.log(`[debug] URL after navigating to portal-ui: ${page.url()}`);
+    if (!page.url().includes("/portal-ui")) {
+      throw new Error(`Expected to land on portal-ui but got redirected to: ${page.url()}`);
+    }
+
+    const brandNamePattern = new RegExp(make, "i");
+    let brandTile = page.getByRole("img", { name: brandNamePattern }).first();
+    if ((await brandTile.count()) === 0) {
+      brandTile = page.getByText(brandNamePattern, { exact: false }).first();
+    }
+    if ((await brandTile.count()) === 0) {
+      throw new Error(`Could not find a brand catalog tile matching "${make}" on the portal-ui dashboard.`);
+    }
+    await brandTile.click();
+    await page.waitForLoadState("networkidle");
+    console.log(`[debug] URL after clicking the ${make} brand tile: ${page.url()}`);
 
     // --- SEARCH THE VIN (once per session) ---
     await typeRealistically(page, VIN_INPUT_SELECTOR, vin);
