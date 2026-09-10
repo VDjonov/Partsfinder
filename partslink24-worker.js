@@ -202,7 +202,7 @@ async function lookupOePartNumber(vin, categoryKey) {
     const CONSENT_ACCEPT_ALL_XPATH =
       "xpath=/html/body/div[2]//div/div/div[2]/div/div[2]/div/div[2]/div/div/div[2]/div/button[3]";
     await page
-      .click(CONSENT_ACCEPT_ALL_XPATH, { timeout: 5000 })
+      .click(CONSENT_ACCEPT_ALL_XPATH, { timeout: 15000 })
       .catch(() => {});
 
     // Real selectors, found by inspecting the live login form (a custom
