@@ -50,6 +50,20 @@ async function politeDelay() {
 }
 
 /**
+ * page.fill() sets a field's value directly and fires one bulk input/
+ * change event — it skips the real per-character key events an actual
+ * person typing produces. Confirmed live: the VIN field (and, it turned
+ * out, other fields) behaved differently for fill()'d automation vs.
+ * manually-typed input in the exact same browser. Use this everywhere
+ * text needs to go into the real site instead of page.fill().
+ */
+async function typeRealistically(page, selector, text) {
+  const locator = page.locator(selector);
+  await locator.click();
+  await locator.pressSequentially(text, { delay: 50 });
+}
+
+/**
  * One entry per internal category key. `searchTerms` are tried in turn
  * against the parts search box. `resultKeyword` is used to pick which
  * search-result row to click into (opening its assembly category) — it
@@ -130,7 +144,7 @@ async function selectBrandCatalog(page, make) {
  * search returned nothing usable for this term.
  */
 async function openAssemblyForTerm(page, searchTerm, resultKeyword) {
-  await page.fill(SEARCH_PARTS_INPUT_XPATH, searchTerm);
+  await typeRealistically(page, SEARCH_PARTS_INPUT_XPATH, searchTerm);
   await page.keyboard.press("Enter");
   await page.waitForLoadState("networkidle");
 
@@ -267,9 +281,9 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     const LOGIN_SUBMIT_XPATH =
       "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/button[2]";
 
-    await page.fill(LOGIN_COMPANY_ID_XPATH, PARTSLINK_COMPANY_ID);
-    await page.fill(LOGIN_USERNAME_XPATH, PARTSLINK_USERNAME);
-    await page.fill(LOGIN_PASSWORD_XPATH, PARTSLINK_PASSWORD);
+    await typeRealistically(page, LOGIN_COMPANY_ID_XPATH, PARTSLINK_COMPANY_ID);
+    await typeRealistically(page, LOGIN_USERNAME_XPATH, PARTSLINK_USERNAME);
+    await typeRealistically(page, LOGIN_PASSWORD_XPATH, PARTSLINK_PASSWORD);
     await page.click(LOGIN_SUBMIT_XPATH);
     await page.waitForLoadState("networkidle");
 
@@ -288,7 +302,7 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     await selectBrandCatalog(page, make);
 
     // --- SEARCH THE VIN (once per session) ---
-    await page.fill(VIN_INPUT_SELECTOR, vin);
+    await typeRealistically(page, VIN_INPUT_SELECTOR, vin);
     await page.keyboard.press("Enter");
     await page.waitForLoadState("networkidle");
 
