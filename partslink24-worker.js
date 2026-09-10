@@ -295,18 +295,18 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     await page.click(LOGIN_CONFIRM_XPATH);
     await page.waitForLoadState("networkidle");
 
-    // --- SELECT THE VEHICLE'S BRAND CATALOG (if not already there) ---
-    // Login sometimes auto-redirects straight into a specific brand's
-    // catalog (likely a "last viewed brand" server-side redirect on the
-    // account), skipping the portal-ui dashboard entirely — confirmed
-    // live. Clicking "Peugeot" again in that case was hitting the small
-    // brand logo already in that page's own header (not a dashboard
-    // tile), an unintended extra click that left the VIN field stuck
-    // disabled. Only click into a brand tile if we're actually still on
-    // the generic dashboard.
-    if (!page.url().includes("/pl24-app/")) {
-      await selectBrandCatalog(page, make);
-    }
+    // --- SELECT THE VEHICLE'S BRAND CATALOG ---
+    // Login redirects to an unpredictable place — sometimes the
+    // portal-ui dashboard, sometimes straight into a brand catalog via a
+    // long encoded-token URL (pl24-app/peugeot_parts/0/eyJ...) that looks
+    // and behaves differently (permanently disabled VIN field, Demo
+    // watermark) from the plain URL a real dashboard click produces
+    // (pl24-app/peugeot_parts/0/0?...) — confirmed live. Rather than
+    // trust whatever login redirected to, force navigation to the known
+    // dashboard URL every time and click the brand tile from there, the
+    // same path that worked when done manually.
+    await page.goto("https://www.partslink24.com/portal-ui", { waitUntil: "networkidle" });
+    await selectBrandCatalog(page, make);
 
     // --- SEARCH THE VIN (once per session) ---
     await typeRealistically(page, VIN_INPUT_SELECTOR, vin);
