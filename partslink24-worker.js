@@ -178,7 +178,19 @@ async function openAssembly(page, category) {
  * numbers. Uses the real data-testid attributes found on the live site.
  */
 async function extractMatchingCandidates(page, descriptionInclude, descriptionExclude) {
+  // The parts panel renders asynchronously after the assembly opens.
+  await page.locator('[data-testid="row"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+
   const rows = await page.locator('[data-testid="row"]').all();
+  console.log(`[debug] found ${rows.length} parts rows`);
+  if (rows.length === 0) {
+    const testIds = await page
+      .locator("[data-testid]")
+      .evaluateAll((els) => [...new Set(els.map((el) => el.getAttribute("data-testid")))])
+      .catch(() => []);
+    console.log(`[debug] data-testids present on this page: ${testIds.join(", ") || "(none)"}`);
+  }
+
   const candidates = [];
 
   // Short timeouts: a row is already rendered by the time we get here,
@@ -203,6 +215,11 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
     if (isOE && matchesInclude && !matchesExclude) {
       candidates.push({ partNo, description, restrictions: restrictions || null });
     }
+  }
+
+  if (rows.length > 0 && candidates.length === 0) {
+    const sample = await rows[0].innerText().catch(() => "(unreadable)");
+    console.log(`[debug] no row matched the filters. First row reads:\n${sample}`);
   }
 
   return candidates;
