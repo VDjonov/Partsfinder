@@ -1,0 +1,9 @@
+{
+  "name": "partslink24-test-tool",
+  "version": "1.0.0",
+  "description": "Standalone test tool for Partslink24 OE part number lookup by VIN",
+  "main": "find-oe-part.js",
+  "dependencies": {
+    "playwright": "^1.47.0"
+  }
+}

@@ -1,0 +1,57 @@
+vehicle	
+reg	10C9744
+make	Peugeot
+model	5008
+version	SV 1.6hdi 110 7 Seats 5DR
+body	MPV
+doors	5
+seats	7
+reg_date	2010-06-16
+reg_date_ie	2010-06-16
+sale_date	2023-06-14
+previous_reg	
+engine_cc	1560
+colour	Grey
+fuel	Diesel
+transmission	M
+year_of_manufacture	2010
+tax_class	P
+tax_expiry_date	2026-10-31
+NCT_expiry_date	2026-10-15
+insuranceExpDate	
+nct_pass_date	2025-10-28
+no_of_owners	2
+chassis_no	VF30E9HZHAS110949
+engine_no	JBBN0250691
+co2_emissions	140
+crwExpDate	0000-00-00
+bhp	0
+vlc_no	C177***609
+nct_cert_no	600057951737
+vehicle_category	A
+countryOfManufacture	France (Peugeot)
+technical	
+TechDocCode	31737
+Aspiration	TURBO CHARGED
+TransmissionDescription	MANUAL
+ForwardGears	0
+ArrangementOfCylinders	
+ValveGear	
+MaximumPowerInKW	82
+MaximumPowerAtRPM	
+MaximumTorqueNM	
+MaximumTorqueAtRPM	
+EngineLocation	FRONT
+FWD_RWD_4WD	
+Bore	
+NumberOfCylinders	4
+NumberOfValvesPerCylinder	
+DriveType	4X2
+Delivery	
+Stroke	
+MaximumPowerBHP	110
+MaximumTorqueLbFt	
+MaximumSpeedKPH	
+EngineManufacturer	PSA GROUP
+EngineModelCode	
+EuroStatus	
