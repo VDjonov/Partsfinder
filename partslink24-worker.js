@@ -172,16 +172,32 @@ async function openAssembly(page, category) {
  * "(Eurorepar)" alternate-brand duplicates — we only want genuine OE
  * numbers. Uses the real data-testid attributes found on the live site.
  */
-async function extractMatchingCandidates(page, descriptionInclude, descriptionExclude) {
-  // The site reuses data-testid="row" for every table, including the
-  // Vehicle identification panel on the left — whose rows come first in
-  // the DOM and would otherwise be all we ever read. Close that panel so
-  // only the parts table remains, exactly as a person would.
+/**
+ * The site reuses data-testid="row" for every table, including the
+ * Vehicle identification panel on the left — whose rows come first in
+ * the DOM and would otherwise be all we ever read. Closing that panel
+ * leaves only the parts table, exactly as a person would do.
+ */
+async function closeVehiclePanel(page) {
   await page
     .getByRole("button", { name: /close/i })
     .first()
     .click({ timeout: 3000 })
     .catch(() => {});
+}
+
+/**
+ * Short timeout on purpose: a row is already rendered by the time we
+ * read it, so a missing field means it isn't there at all, and the
+ * default 30s wait would stall for minutes. Rows come in several shapes
+ * (headings, spacers); only ones carrying a part number matter.
+ */
+async function readRowField(row, testId) {
+  return (await row.locator(`[data-testid="${testId}"]`).textContent({ timeout: 2000 }).catch(() => null))?.trim();
+}
+
+async function extractMatchingCandidates(page, descriptionInclude, descriptionExclude) {
+  await closeVehiclePanel(page);
 
   // The parts panel renders asynchronously after the assembly opens.
   await page.locator('[data-testid="row"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
@@ -193,16 +209,9 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
   // candidate to put in front of a human.
   const byPartNo = new Map();
 
-  // Short timeouts: a row is already rendered by the time we get here,
-  // so a missing field means it isn't there at all. Waiting the default
-  // 30s per field would stall for minutes. Rows come in several shapes
-  // (headings, spacers), and only ones carrying a part number matter.
-  const readField = async (row, testId) =>
-    (await row.locator(`[data-testid="${testId}"]`).textContent({ timeout: 2000 }).catch(() => null))?.trim();
-
   for (const row of rows) {
-    const partNo = await readField(row, "partnoValue");
-    const description = await readField(row, "descriptionValue");
+    const partNo = await readRowField(row, "partnoValue");
+    const description = await readRowField(row, "descriptionValue");
 
     if (!partNo || !description || byPartNo.has(partNo)) continue;
 
@@ -218,8 +227,8 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
         description,
         // e.g. "DIAM 283 EP 26" — disc diameter/thickness, which is what
         // distinguishes otherwise identical-looking variants.
-        remark: (await readField(row, "remarkValue")) || null,
-        restrictions: (await readField(row, "restrictionValue")) || null,
+        remark: (await readRowField(row, "remarkValue")) || null,
+        restrictions: (await readRowField(row, "restrictionValue")) || null,
       });
     }
   }
@@ -257,8 +266,23 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
  *   `ambiguous` is true — `candidates` lists all of them for a human to
  *   resolve using the vehicle/engine in front of them.
  */
+function credentialsConfigured() {
+  return Boolean(PARTSLINK_COMPANY_ID && PARTSLINK_USERNAME && PARTSLINK_PASSWORD);
+}
+
+async function launchCatalogBrowser() {
+  // Flip headless off when you need to watch a run to debug it.
+  const browser = await chromium.launch({ headless: true });
+  // The catalog is responsive: narrow windows stack the parts panel into
+  // cards, wide ones render it as a table. The selectors here were built
+  // against the wide layout, so pin a desktop-sized viewport.
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const page = await context.newPage();
+  return { browser, page };
+}
+
 async function lookupOePartNumber(vin, make, categoryKey) {
-  if (!PARTSLINK_COMPANY_ID || !PARTSLINK_USERNAME || !PARTSLINK_PASSWORD) {
+  if (!credentialsConfigured()) {
     throw new Error("Partslink24 credentials not configured");
   }
 
@@ -271,16 +295,59 @@ async function lookupOePartNumber(vin, make, categoryKey) {
   }
 
   await politeDelay();
-
-  // Flip headless off when you need to watch a run to debug it.
-  const browser = await chromium.launch({ headless: true });
-  // The catalog is responsive: narrow windows stack the parts panel into
-  // cards, wide ones render it as a table. The selectors here were built
-  // against the wide layout, so pin a desktop-sized viewport.
-  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
-  const page = await context.newPage();
+  const { browser, page } = await launchCatalogBrowser();
 
   try {
+    await openVehicleCatalog(page, vin, make);
+
+    // --- WALK THE CATEGORY TREE TO THE RIGHT ASSEMBLY ---
+    await openAssembly(page, category);
+
+    const candidates = await extractMatchingCandidates(
+      page,
+      category.descriptionInclude,
+      category.descriptionExclude,
+    );
+
+    if (candidates.length === 1) {
+      return { success: true, oeNumber: candidates[0].partNo, candidates };
+    }
+
+    if (candidates.length > 1) {
+      return {
+        success: false,
+        ambiguous: true,
+        error: `Found ${candidates.length} possible OE numbers for category "${categoryKey}" — needs human review to pick the right one for this vehicle.`,
+        candidates,
+      };
+    }
+
+    return {
+      success: false,
+      error: `No OE part matched in the "${category.scope} > ${category.mainGroup}" assembly for category "${categoryKey}".`,
+    };
+  } catch (err) {
+    console.error("Partslink24 lookup failed:", err);
+    // Capture what the page actually looked like — far more useful for
+    // diagnosing a failed step than the error text alone.
+    await page.screenshot({ path: "debug-failure.png", fullPage: true }).catch(() => {});
+    console.error("Saved a screenshot of the failing page to debug-failure.png");
+    return {
+      success: false,
+      error: "Partslink24 lookup failed — see server logs and debug-failure.png for details.",
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Log in and get to the point where a specific vehicle's catalog is open
+ * and ready to be navigated. Everything up to here is the same no matter
+ * what part is being looked up.
+ */
+async function openVehicleCatalog(page, vin, make) {
+  {
     // --- LOGIN (once per session) ---
     await page.goto(PARTSLINK_LOGIN_URL, { waitUntil: "networkidle" });
 
@@ -372,46 +439,17 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     await typeRealistically(page, VIN_INPUT_SELECTOR, vin);
     await page.keyboard.press("Enter");
     await page.waitForLoadState("networkidle");
-
-    // --- WALK THE CATEGORY TREE TO THE RIGHT ASSEMBLY ---
-    await openAssembly(page, category);
-
-    const candidates = await extractMatchingCandidates(
-      page,
-      category.descriptionInclude,
-      category.descriptionExclude,
-    );
-
-    if (candidates.length === 1) {
-      return { success: true, oeNumber: candidates[0].partNo, candidates };
-    }
-
-    if (candidates.length > 1) {
-      return {
-        success: false,
-        ambiguous: true,
-        error: `Found ${candidates.length} possible OE numbers for category "${categoryKey}" — needs human review to pick the right one for this vehicle.`,
-        candidates,
-      };
-    }
-
-    return {
-      success: false,
-      error: `No OE part matched in the "${category.scope} > ${category.mainGroup}" assembly for category "${categoryKey}".`,
-    };
-  } catch (err) {
-    console.error("Partslink24 lookup failed:", err);
-    // Capture what the page actually looked like — far more useful for
-    // diagnosing a failed step than the error text alone.
-    await page.screenshot({ path: "debug-failure.png", fullPage: true }).catch(() => {});
-    console.error("Saved a screenshot of the failing page to debug-failure.png");
-    return {
-      success: false,
-      error: "Partslink24 lookup failed — see server logs and debug-failure.png for details.",
-    };
-  } finally {
-    await browser.close();
   }
 }
 
-module.exports = { lookupOePartNumber, PART_CATEGORIES };
+module.exports = {
+  lookupOePartNumber,
+  PART_CATEGORIES,
+  // Shared with the experimental vocabulary-driven lookup.
+  openVehicleCatalog,
+  launchCatalogBrowser,
+  closeVehiclePanel,
+  readRowField,
+  politeDelay,
+  credentialsConfigured,
+};
