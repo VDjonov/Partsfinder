@@ -18,6 +18,7 @@
 
 const { chromium } = require("playwright");
 
+const PARTSLINK_COMPANY_ID = process.env.PARTSLINK_COMPANY_ID;
 const PARTSLINK_USERNAME = process.env.PARTSLINK_USERNAME;
 const PARTSLINK_PASSWORD = process.env.PARTSLINK_PASSWORD;
 const PARTSLINK_LOGIN_URL = "https://www.partslink24.com/en/index.html";
@@ -83,7 +84,7 @@ async function trySearchTerm(page, vin, searchTerm) {
  * @returns {Promise<{ success: boolean, oeNumber?: string, matchedTerm?: string, triedTerms?: string[], error?: string }>}
  */
 async function lookupOePartNumber(vin, categoryKey) {
-  if (!PARTSLINK_USERNAME || !PARTSLINK_PASSWORD) {
+  if (!PARTSLINK_COMPANY_ID || !PARTSLINK_USERNAME || !PARTSLINK_PASSWORD) {
     throw new Error("Partslink24 credentials not configured");
   }
 
@@ -106,6 +107,8 @@ async function lookupOePartNumber(vin, categoryKey) {
     await page.goto(PARTSLINK_LOGIN_URL, { waitUntil: "networkidle" });
 
     // REPLACE ME: real selectors for the login form
+    // The real form has three fields: Company ID / partslink24 ID, User name, Password.
+    await page.fill('input[name="companyId"] /* REPLACE ME */', PARTSLINK_COMPANY_ID);
     await page.fill('input[name="username"] /* REPLACE ME */', PARTSLINK_USERNAME);
     await page.fill('input[name="password"] /* REPLACE ME */', PARTSLINK_PASSWORD);
     await page.click('button[type="submit"] /* REPLACE ME */');

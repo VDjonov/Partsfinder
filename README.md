@@ -17,7 +17,9 @@ given a Motorcheck-format vehicle data dump.
    the login fields / search box / results area, and "Inspect Element"
    to find the real ones.
 
-4. Set your credentials as environment variables:
+4. Set your credentials as environment variables (the portal login form
+   has three fields — Company ID / partslink24 ID, User name, Password):
+   export PARTSLINK_COMPANY_ID="your-company-id"
    export PARTSLINK_USERNAME="your-username"
    export PARTSLINK_PASSWORD="your-password"
 
