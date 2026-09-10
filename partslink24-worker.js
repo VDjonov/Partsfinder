@@ -107,6 +107,17 @@ async function lookupOePartNumber(vin, categoryKey) {
     // --- LOGIN (once per session) ---
     await page.goto(PARTSLINK_LOGIN_URL, { waitUntil: "networkidle" });
 
+    // Playwright launches a fresh browser profile every run, so the
+    // Usercentrics cookie-consent overlay appears on every run too and
+    // sits on top of the login form. Dismiss it before touching the form.
+    // If it doesn't appear (e.g. consent already granted in this context),
+    // this just times out quickly and we move on.
+    const CONSENT_ACCEPT_ALL_XPATH =
+      "xpath=/html/body/div[2]//div/div/div[2]/div/div[2]/div/div[2]/div/div/div[2]/div/button[3]";
+    await page
+      .click(CONSENT_ACCEPT_ALL_XPATH, { timeout: 5000 })
+      .catch(() => {});
+
     // Real selectors, found by inspecting the live login form (a custom
     // <pl24-login-ui> element with three fields: Company ID, User name,
     // Password). These are absolute XPaths, so they'll break if
