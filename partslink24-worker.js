@@ -138,6 +138,13 @@ async function lookupOePartNumber(vin, categoryKey) {
     await page.click(LOGIN_SUBMIT_XPATH);
     await page.waitForLoadState("networkidle");
 
+    // Login is a two-step flow: submitting credentials reveals a second
+    // confirmation button that must also be clicked to complete login.
+    const LOGIN_CONFIRM_XPATH =
+      "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/div/div/button[2]";
+    await page.click(LOGIN_CONFIRM_XPATH);
+    await page.waitForLoadState("networkidle");
+
     // --- TRY EACH SYNONYM TERM IN TURN ---
     for (const term of searchTerms) {
       triedTerms.push(term);
