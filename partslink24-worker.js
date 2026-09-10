@@ -270,11 +270,16 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     // dialog ("end current session and log in again?") that must be
     // clicked to complete login — but only when a conflicting session
     // actually exists server-side. Only click it if it's really there.
-    const confirmButton = page.getByRole("button", { name: "Confirm", exact: true });
-    if (await confirmButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await confirmButton.click();
-      await page.waitForLoadState("networkidle");
-    }
+    // Note: isVisible() must NOT be used to detect it — that call returns
+    // the current state immediately without waiting, so it reports false
+    // for a dialog that renders a moment later and the click gets
+    // skipped. click() auto-waits, so it clicks the dialog when present
+    // and simply times out harmlessly when there isn't one.
+    await page
+      .getByRole("button", { name: "Confirm", exact: true })
+      .click({ timeout: 10000 })
+      .catch(() => {});
+    await page.waitForLoadState("networkidle");
 
     // Login redirects asynchronously after the above — don't just trust
     // that no click errored, actually wait until we've left the login
