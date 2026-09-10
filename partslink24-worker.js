@@ -98,7 +98,7 @@ async function lookupOePartNumber(vin, categoryKey) {
 
   await politeDelay();
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: false }); // TEMP: visible for selector discovery — revert to true when done
   const page = await browser.newPage();
   const triedTerms = [];
 
