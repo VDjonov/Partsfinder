@@ -130,6 +130,14 @@ async function openAssembly(page, category) {
     throw new Error("This category has no verified category-tree path configured yet.");
   }
 
+  // A modal's backdrop can sit over the category columns and swallow
+  // clicks — give it a chance to clear before reaching for the tree.
+  await page
+    .locator(".MuiBackdrop-root")
+    .last()
+    .waitFor({ state: "hidden", timeout: 15000 })
+    .catch(() => {});
+
   await page.getByText(category.scope, { exact: true }).first().click();
   await page.waitForLoadState("networkidle");
   console.log(`[debug] clicked scope "${category.scope}"`);
@@ -347,9 +355,13 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     };
   } catch (err) {
     console.error("Partslink24 lookup failed:", err);
+    // Capture what the page actually looked like — far more useful for
+    // diagnosing a failed step than the error text alone.
+    await page.screenshot({ path: "debug-failure.png", fullPage: true }).catch(() => {});
+    console.error("Saved a screenshot of the failing page to debug-failure.png");
     return {
       success: false,
-      error: "Partslink24 lookup failed — see server logs for details.",
+      error: "Partslink24 lookup failed — see server logs and debug-failure.png for details.",
     };
   } finally {
     await browser.close();
