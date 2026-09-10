@@ -7,11 +7,12 @@
  * searches by VIN, and extracts the OE part number for a requested
  * position/category.
  *
- * IMPORTANT: the CSS selectors below are PLACEHOLDERS. You'll need to
- * open the real logged-in portal, inspect the actual login form, search
- * field, and results table, and replace every selector marked
- * "REPLACE ME" with the real one. This is easiest done interactively
- * with Claude Code while watching the live site.
+ * IMPORTANT: the login selectors are now real (found by inspecting the
+ * live portal). The VIN search box, category search box, and OE-number
+ * result selectors below are still PLACEHOLDERS — every spot marked
+ * "REPLACE ME" needs the real selector from the logged-in vehicle/search
+ * view. This is easiest done interactively with Claude Code while
+ * watching the live site.
  *
  * Uses Playwright: npm install playwright
  */
@@ -106,12 +107,24 @@ async function lookupOePartNumber(vin, categoryKey) {
     // --- LOGIN (once per session) ---
     await page.goto(PARTSLINK_LOGIN_URL, { waitUntil: "networkidle" });
 
-    // REPLACE ME: real selectors for the login form
-    // The real form has three fields: Company ID / partslink24 ID, User name, Password.
-    await page.fill('input[name="companyId"] /* REPLACE ME */', PARTSLINK_COMPANY_ID);
-    await page.fill('input[name="username"] /* REPLACE ME */', PARTSLINK_USERNAME);
-    await page.fill('input[name="password"] /* REPLACE ME */', PARTSLINK_PASSWORD);
-    await page.click('button[type="submit"] /* REPLACE ME */');
+    // Real selectors, found by inspecting the live login form (a custom
+    // <pl24-login-ui> element with three fields: Company ID, User name,
+    // Password). These are absolute XPaths, so they'll break if
+    // partslink24 changes the page's DOM structure — if login starts
+    // failing here again, re-inspect and update these.
+    const LOGIN_COMPANY_ID_XPATH =
+      "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/div[1]/div/input";
+    const LOGIN_USERNAME_XPATH =
+      "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/div[2]/div/input";
+    const LOGIN_PASSWORD_XPATH =
+      "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/div[3]/div/input";
+    const LOGIN_SUBMIT_XPATH =
+      "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/button[2]";
+
+    await page.fill(LOGIN_COMPANY_ID_XPATH, PARTSLINK_COMPANY_ID);
+    await page.fill(LOGIN_USERNAME_XPATH, PARTSLINK_USERNAME);
+    await page.fill(LOGIN_PASSWORD_XPATH, PARTSLINK_PASSWORD);
+    await page.click(LOGIN_SUBMIT_XPATH);
     await page.waitForLoadState("networkidle");
 
     // --- TRY EACH SYNONYM TERM IN TURN ---
