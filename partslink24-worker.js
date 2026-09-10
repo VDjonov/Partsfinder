@@ -262,15 +262,27 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     await page.click(LOGIN_SUBMIT_XPATH);
     await page.waitForLoadState("networkidle");
 
-    // Login is a two-step flow: submitting credentials reveals a second
-    // confirmation button ("end current session and log in again?") that
-    // must also be clicked to complete login.
+    // Submitting credentials sometimes reveals a second confirmation
+    // dialog ("end current session and log in again?") that must be
+    // clicked to complete login — but only when a conflicting session
+    // actually exists server-side. Confirmed live: blindly clicking this
+    // XPath when the dialog isn't present hits some other element on the
+    // still-visible login page instead, and login silently never
+    // completes. Only click it if it's actually there.
     const LOGIN_CONFIRM_XPATH =
       "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/div/div/button[2]";
-    await page.click(LOGIN_CONFIRM_XPATH);
-    await page.waitForLoadState("networkidle");
+    const confirmDialog = page.locator(LOGIN_CONFIRM_XPATH);
+    if (await confirmDialog.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await confirmDialog.click();
+      await page.waitForLoadState("networkidle");
+    }
 
-    console.log(`[debug] URL right after login+confirm: ${page.url()}`);
+    // Login redirects asynchronously after the above — don't just trust
+    // that no click errored, actually wait until we've left the login
+    // page before treating login as complete.
+    await page.waitForFunction(() => !location.pathname.endsWith("/en/index.html"), null, { timeout: 15000 });
+
+    console.log(`[debug] URL right after login: ${page.url()}`);
 
     // --- OPEN THE VEHICLE'S BRAND CATALOG ---
     // Neither a direct page.goto() to a brand URL nor trusting login's
