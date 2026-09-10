@@ -253,27 +253,26 @@ async function lookupOePartNumber(vin, make, categoryKey) {
       "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/div[2]/div/input";
     const LOGIN_PASSWORD_XPATH =
       "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/div[3]/div/input";
-    const LOGIN_SUBMIT_XPATH =
-      "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/form/button[2]";
 
     await typeRealistically(page, LOGIN_COMPANY_ID_XPATH, PARTSLINK_COMPANY_ID);
     await typeRealistically(page, LOGIN_USERNAME_XPATH, PARTSLINK_USERNAME);
     await typeRealistically(page, LOGIN_PASSWORD_XPATH, PARTSLINK_PASSWORD);
-    await page.click(LOGIN_SUBMIT_XPATH);
+
+    // Match the buttons by their labels rather than by position in the
+    // DOM. An absolute XPath ending in button[2] ("the second button in
+    // the form") silently resolves to the wrong element whenever the
+    // form's layout shifts, which is what left credentials filled but
+    // never submitted.
+    await page.getByRole("button", { name: "Log in", exact: true }).click();
     await page.waitForLoadState("networkidle");
 
     // Submitting credentials sometimes reveals a second confirmation
     // dialog ("end current session and log in again?") that must be
     // clicked to complete login — but only when a conflicting session
-    // actually exists server-side. Confirmed live: blindly clicking this
-    // XPath when the dialog isn't present hits some other element on the
-    // still-visible login page instead, and login silently never
-    // completes. Only click it if it's actually there.
-    const LOGIN_CONFIRM_XPATH =
-      "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/div/div/button[2]";
-    const confirmDialog = page.locator(LOGIN_CONFIRM_XPATH);
-    if (await confirmDialog.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await confirmDialog.click();
+    // actually exists server-side. Only click it if it's really there.
+    const confirmButton = page.getByRole("button", { name: "Confirm", exact: true });
+    if (await confirmButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await confirmButton.click();
       await page.waitForLoadState("networkidle");
     }
 
