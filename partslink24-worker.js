@@ -113,31 +113,6 @@ const SEARCH_PARTS_INPUT_XPATH =
   "xpath=/html/body/div[1]/div/div[3]/header/div/div/div/div[1]/div/div[2]/div/div/div/input";
 
 /**
- * Click the brand catalog tile matching `make` on the portal-ui
- * dashboard. The dashboard's generic VIN search can't resolve every VIN
- * to a distinct model ("could not be assigned to a distinct model" —
- * seen live for a real VIN), so the brand catalog has to be opened first.
- *
- * NOT YET VALIDATED against the real site — matches by the tile's
- * visible/alt text, which is a reasonable guess but hasn't been
- * confirmed by inspection. If this picks the wrong tile or finds none,
- * inspect the real brand grid (same process as everything else in this
- * file) and replace this with a firmer selector.
- */
-async function selectBrandCatalog(page, make) {
-  const brandNamePattern = new RegExp(make, "i");
-  let brandTile = page.getByRole("img", { name: brandNamePattern }).first();
-  if ((await brandTile.count()) === 0) {
-    brandTile = page.getByText(brandNamePattern, { exact: false }).first();
-  }
-  if ((await brandTile.count()) === 0) {
-    throw new Error(`Could not find a brand catalog tile matching "${make}" on the portal-ui dashboard.`);
-  }
-  await brandTile.click();
-  await page.waitForLoadState("networkidle");
-}
-
-/**
  * Search the category term and click into the result matching
  * `resultKeyword`, landing on that part's full assembly diagram/table.
  * Returns true if a matching result was found and clicked, false if the
@@ -295,18 +270,26 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     await page.click(LOGIN_CONFIRM_XPATH);
     await page.waitForLoadState("networkidle");
 
-    // --- SELECT THE VEHICLE'S BRAND CATALOG ---
-    // Login redirects to an unpredictable place — sometimes the
-    // portal-ui dashboard, sometimes straight into a brand catalog via a
-    // long encoded-token URL (pl24-app/peugeot_parts/0/eyJ...) that looks
-    // and behaves differently (permanently disabled VIN field, Demo
-    // watermark) from the plain URL a real dashboard click produces
-    // (pl24-app/peugeot_parts/0/0?...) — confirmed live. Rather than
-    // trust whatever login redirected to, force navigation to the known
-    // dashboard URL every time and click the brand tile from there, the
-    // same path that worked when done manually.
-    await page.goto("https://www.partslink24.com/portal-ui", { waitUntil: "networkidle" });
-    await selectBrandCatalog(page, make);
+    // --- OPEN THE VEHICLE'S BRAND CATALOG ---
+    // Confirmed live: the server forces a redirect on login/re-auth
+    // regardless of which page is requested afterward, and lands on a
+    // long encoded-token brand-catalog URL (pl24-app/peugeot_parts/0/eyJ...)
+    // that behaves differently (permanently disabled VIN field, Demo
+    // watermark) from the plain URL a real dashboard brand-tile click
+    // produces (pl24-app/peugeot_parts/0/0?lang=en&desktop=true). Since
+    // clicking through the dashboard still gets swept into that same
+    // redirect, navigate directly to the known-good plain URL pattern
+    // instead of clicking anything.
+    //
+    // NOT YET VALIDATED for brands whose name doesn't map this simply to
+    // a URL slug (e.g. multi-word makes) — if this 404s or misroutes for
+    // another vehicle's make, inspect the real slug for that brand
+    // (click its tile manually and read the resulting URL) and adjust
+    // this slug derivation.
+    const brandSlug = make.trim().toLowerCase().replace(/\s+/g, "_");
+    await page.goto(`https://www.partslink24.com/pl24-app/${brandSlug}_parts/0/0?lang=en&desktop=true`, {
+      waitUntil: "networkidle",
+    });
 
     // --- SEARCH THE VIN (once per session) ---
     await typeRealistically(page, VIN_INPUT_SELECTOR, vin);
