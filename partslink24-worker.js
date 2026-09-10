@@ -95,6 +95,31 @@ const SEARCH_PARTS_INPUT_XPATH =
   "xpath=/html/body/div[1]/div/div[3]/header/div/div/div/div[1]/div/div[2]/div/div/div/input";
 
 /**
+ * Click the brand catalog tile matching `make` on the portal-ui
+ * dashboard. The dashboard's generic VIN search can't resolve every VIN
+ * to a distinct model ("could not be assigned to a distinct model" —
+ * seen live for a real VIN), so the brand catalog has to be opened first.
+ *
+ * NOT YET VALIDATED against the real site — matches by the tile's
+ * visible/alt text, which is a reasonable guess but hasn't been
+ * confirmed by inspection. If this picks the wrong tile or finds none,
+ * inspect the real brand grid (same process as everything else in this
+ * file) and replace this with a firmer selector.
+ */
+async function selectBrandCatalog(page, make) {
+  const brandNamePattern = new RegExp(make, "i");
+  let brandTile = page.getByRole("img", { name: brandNamePattern }).first();
+  if ((await brandTile.count()) === 0) {
+    brandTile = page.getByText(brandNamePattern, { exact: false }).first();
+  }
+  if ((await brandTile.count()) === 0) {
+    throw new Error(`Could not find a brand catalog tile matching "${make}" on the portal-ui dashboard.`);
+  }
+  await brandTile.click();
+  await page.waitForLoadState("networkidle");
+}
+
+/**
  * Search the category term and click into the result matching
  * `resultKeyword`, landing on that part's full assembly diagram/table.
  * Returns true if a matching result was found and clicked, false if the
@@ -161,6 +186,7 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
  * assembly with usable matches.
  *
  * @param {string} vin
+ * @param {string} make - vehicle make, e.g. "Peugeot" — used to pick the right brand catalog
  * @param {string} categoryKey - key into CATEGORY_SYNONYMS, e.g. "front_brake_disc"
  * @returns {Promise<{
  *   success: boolean,
@@ -177,7 +203,7 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
  *   `ambiguous` is true — `candidates` lists all of them for a human to
  *   resolve using the vehicle/engine in front of them.
  */
-async function lookupOePartNumber(vin, categoryKey) {
+async function lookupOePartNumber(vin, make, categoryKey) {
   if (!PARTSLINK_COMPANY_ID || !PARTSLINK_USERNAME || !PARTSLINK_PASSWORD) {
     throw new Error("Partslink24 credentials not configured");
   }
@@ -244,6 +270,12 @@ async function lookupOePartNumber(vin, categoryKey) {
       "xpath=/html/body/div[1]/main/div/section[1]/div[2]/div/pl24-login-ui/div/div/div/button[2]";
     await page.click(LOGIN_CONFIRM_XPATH);
     await page.waitForLoadState("networkidle");
+
+    // --- SELECT THE VEHICLE'S BRAND CATALOG ---
+    // The portal-ui dashboard's generic VIN search can't resolve every
+    // VIN to a distinct model, so the correct brand catalog has to be
+    // opened first.
+    await selectBrandCatalog(page, make);
 
     // --- SEARCH THE VIN (once per session) ---
     await page.fill(VIN_INPUT_SELECTOR, vin);

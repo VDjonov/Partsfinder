@@ -34,13 +34,17 @@ async function main() {
     console.error("No chassis_no (VIN) found in the vehicle data — cannot proceed.");
     process.exit(1);
   }
+  if (!vehicle.make) {
+    console.error("No make found in the vehicle data — cannot proceed (needed to pick the right Partslink24 brand catalog).");
+    process.exit(1);
+  }
 
   console.log(`Vehicle: ${vehicle.make} ${vehicle.model} (${vehicle.version})`);
   console.log(`VIN: ${vehicle.chassis_no}`);
   console.log(`TechDocCode: ${vehicle.TechDocCode || "(none)"}`);
   console.log(`Looking up category: ${categoryKey}\n`);
 
-  const result = await lookupOePartNumber(vehicle.chassis_no, categoryKey);
+  const result = await lookupOePartNumber(vehicle.chassis_no, vehicle.make, categoryKey);
 
   console.log(JSON.stringify(result, null, 2));
 }
