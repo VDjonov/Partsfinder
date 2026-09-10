@@ -88,7 +88,11 @@ const PART_CATEGORIES = {
   front_brake_disc: {
     scope: "Mechanical",
     mainGroup: "Braking",
-    assembly: /front brakes/i,
+    // Must match the clickable row's full description ("FRONT BRAKES
+    // DISC CALIPER FRICTION PAD"), not the grey "Front brakes" section
+    // heading above it — that heading isn't clickable, so a looser
+    // pattern matches it first and navigates nowhere.
+    assembly: /front brakes disc caliper/i,
     // Note "DISKS", not "discs" — the real catalog spells it with a K
     // ("2 FRONT DISKS KIT, VENTILATED"). Match both spellings.
     descriptionInclude: ["disk", "disc"],
@@ -177,10 +181,16 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
   const rows = await page.locator('[data-testid="row"]').all();
   const candidates = [];
 
+  // Short timeouts: a row is already rendered by the time we get here,
+  // so a missing field means it isn't there at all. Waiting the default
+  // 30s per field would stall for minutes on a table of the wrong shape.
+  const readField = async (row, testId) =>
+    (await row.locator(`[data-testid="${testId}"]`).textContent({ timeout: 2000 }).catch(() => null))?.trim();
+
   for (const row of rows) {
-    const partNo = (await row.locator('[data-testid="partnoValue"]').textContent().catch(() => null))?.trim();
-    const description = (await row.locator('[data-testid="descriptionValue"]').textContent().catch(() => null))?.trim();
-    const restrictions = (await row.locator('[data-testid="restrictionValue"]').textContent().catch(() => null))?.trim();
+    const partNo = await readField(row, "partnoValue");
+    const description = await readField(row, "descriptionValue");
+    const restrictions = await readField(row, "restrictionValue");
 
     if (!partNo || !description) continue;
 
