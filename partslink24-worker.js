@@ -223,7 +223,13 @@ async function lookupOePartNumber(vin, make, categoryKey) {
   await politeDelay();
 
   const browser = await chromium.launch({ headless: false }); // TEMP: visible for selector discovery — revert to true when done
-  const page = await browser.newPage();
+  // Playwright's default browser window is smaller than a typical desktop
+  // window. The real site appends a "desktop=true" URL param once it's
+  // decided it's looking at a real desktop browser, and the VIN field
+  // stayed disabled specifically in Playwright's default-sized window —
+  // set a realistic desktop viewport to match a normal browser window.
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const page = await context.newPage();
   const triedTerms = [];
 
   try {
