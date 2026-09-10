@@ -178,17 +178,27 @@ async function openAssembly(page, category) {
  * numbers. Uses the real data-testid attributes found on the live site.
  */
 async function extractMatchingCandidates(page, descriptionInclude, descriptionExclude) {
+  // The site reuses data-testid="row" for every table, including the
+  // Vehicle identification panel on the left — whose rows come first in
+  // the DOM and would otherwise be all we ever read. Close that panel so
+  // only the parts table remains, exactly as a person would.
+  await page
+    .getByRole("button", { name: /close/i })
+    .first()
+    .click({ timeout: 3000 })
+    .catch(() => {});
+
   // The parts panel renders asynchronously after the assembly opens.
   await page.locator('[data-testid="row"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
 
   const rows = await page.locator('[data-testid="row"]').all();
   console.log(`[debug] found ${rows.length} parts rows`);
-  if (rows.length === 0) {
-    const testIds = await page
+  if (rows.length > 0) {
+    const innerTestIds = await rows[0]
       .locator("[data-testid]")
       .evaluateAll((els) => [...new Set(els.map((el) => el.getAttribute("data-testid")))])
       .catch(() => []);
-    console.log(`[debug] data-testids present on this page: ${testIds.join(", ") || "(none)"}`);
+    console.log(`[debug] field testids inside the first row: ${innerTestIds.join(", ") || "(none)"}`);
   }
 
   const candidates = [];
