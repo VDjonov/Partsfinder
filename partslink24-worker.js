@@ -9,23 +9,25 @@
  *
  * How the real site actually behaves (found by interactively inspecting
  * the live, logged-in portal):
- *   - Typing a category term (e.g. "front brake disc") into the parts
- *     search box returns a list of loosely word-matched parts, not one
- *     precise hit — e.g. searching "front brake disc" can return a
- *     "REAR BRAKE DISC PROTECTOR" as the top result.
- *   - Clicking into any result opens the full assembly diagram/category
- *     it belongs to (e.g. "Front Brakes Disc Caliper Friction Pad"),
- *     which lists every part in that assembly — this is where the
- *     correct part actually lives.
- *   - Within that assembly's list, some rows are the genuine OE part
+ *   - Login lands on the portal-ui dashboard; clicking a brand tile from
+ *     there opens that brand's catalog at a plain URL. Reaching a brand
+ *     catalog any other way (login's own redirect, or a direct goto to a
+ *     brand URL) lands on a "Demo" variant whose VIN field is
+ *     permanently disabled.
+ *   - The free-text parts search word-matches too loosely to be usable:
+ *     searching "front brake disc" returns a rear disc protector, brake
+ *     hoses and wheel hubs, but no front brake disc at all. So we ignore
+ *     it and walk the catalog's own category tree instead
+ *     (Scope > Main group > assembly), which is deterministic.
+ *   - Within an assembly's parts list, some rows are the genuine OE part
  *     and others are alternate-brand duplicates explicitly suffixed
  *     "(Eurorepar)" in their description.
  *   - There is no reliable per-row signal for "front" vs "rear" beyond
- *     the assembly category itself and the description text — so we
- *     never guess a single winner when more than one non-Eurorepar row
- *     matches the requested part keyword. We return every candidate and
- *     let a human pick, since only someone with the vehicle/engine in
- *     front of them can safely resolve remaining ambiguity.
+ *     the assembly itself and the description text — so we never guess a
+ *     single winner when more than one non-Eurorepar row matches. We
+ *     return every candidate and let a human pick, since only someone
+ *     with the vehicle/engine in front of them can safely resolve
+ *     remaining ambiguity.
  *
  * Uses Playwright: npm install playwright
  */
@@ -64,34 +66,41 @@ async function typeRealistically(page, selector, text) {
 }
 
 /**
- * One entry per internal category key. `searchTerms` are tried in turn
- * against the parts search box. `resultKeyword` is used to pick which
- * search-result row to click into (opening its assembly category) — it
- * should be a word that's reliably in the right assembly's results but
- * not in unrelated ones (e.g. "front"). `descriptionInclude` /
- * `descriptionExclude` filter the assembly's row descriptions down to
- * the specific part we want (e.g. "disc" but not "caliper"/"pad"/"hose").
+ * One entry per internal category key, describing how to navigate the
+ * catalog's own category tree to the assembly containing that part.
+ *
+ * The free-text "Search for parts" box is deliberately NOT used: it
+ * word-matches loosely, and confirmed live, searching "front brake disc"
+ * returns a rear disc protector, brake hoses and wheel hubs — but no
+ * front brake disc at all. The category tree (Scope → Main group →
+ * assembly) reaches the right parts deterministically instead.
+ *
+ * `scope` / `mainGroup` / `assembly` are the three clicks, matched by
+ * their visible labels. `descriptionInclude` / `descriptionExclude` then
+ * filter that assembly's rows down to the specific part.
  *
  * Only front_brake_disc has been verified against the real site so far.
- * Start small and grow this from real staff use: whenever a lookup
- * needs more than one candidate resolved by hand, or fails outright,
- * that's a signal to inspect the real result/assembly pages for that
- * category (same process used for front_brake_disc) and refine its entry.
+ * Start small and grow this from real staff use: whenever a lookup fails
+ * or needs a candidate resolved by hand, that's a signal to walk the
+ * real category tree for it (same process used for front_brake_disc).
  */
-const CATEGORY_SYNONYMS = {
+const PART_CATEGORIES = {
   front_brake_disc: {
-    searchTerms: ["front brake disc", "brake disc front", "front disc"],
-    resultKeyword: "front",
-    descriptionInclude: ["disc"],
-    descriptionExclude: ["caliper", "pad", "hose", "hub"],
+    scope: "Mechanical",
+    mainGroup: "Braking",
+    assembly: /front brakes/i,
+    // Note "DISKS", not "discs" — the real catalog spells it with a K
+    // ("2 FRONT DISKS KIT, VENTILATED"). Match both spellings.
+    descriptionInclude: ["disk", "disc"],
+    descriptionExclude: ["caliper", "pad", "hose", "hub", "protector"],
   },
   window_regulator: {
-    // REPLACE ME: not yet verified against the real site. Search for
-    // one of these terms, inspect the real result list and the assembly
-    // it opens (same process as front_brake_disc above), then fill in
-    // resultKeyword / descriptionInclude / descriptionExclude for real.
-    searchTerms: ["window regulator", "window lifter", "window winder"],
-    resultKeyword: "",
+    // REPLACE ME: not yet verified against the real site. Walk the
+    // category tree to this part manually, note the three labels, then
+    // fill them in here (same process as front_brake_disc above).
+    scope: "",
+    mainGroup: "",
+    assembly: null,
     descriptionInclude: [],
     descriptionExclude: [],
   },
@@ -109,37 +118,29 @@ const CATEGORY_SYNONYMS = {
 // it becomes the real vehicle-specific catalog — that's where the
 // "Search for parts" box below lives.
 const VIN_INPUT_SELECTOR = 'input[placeholder="Direct entry"]';
-const SEARCH_PARTS_INPUT_XPATH =
-  "xpath=/html/body/div[1]/div/div[3]/header/div/div/div/div[1]/div/div[2]/div/div/div/input";
 
 /**
- * Search the category term and click into the result matching
- * `resultKeyword`, landing on that part's full assembly diagram/table.
- * Returns true if a matching result was found and clicked, false if the
- * search returned nothing usable for this term.
+ * Walk the catalog's category tree (Scope → Main group → assembly) to
+ * the assembly holding the requested part, e.g.
+ * Mechanical → Braking → "FRONT BRAKES DISC CALIPER FRICTION PAD".
+ * Each step is a click on a visibly-labelled row in the next column.
  */
-async function openAssemblyForTerm(page, searchTerm, resultKeyword) {
-  await typeRealistically(page, SEARCH_PARTS_INPUT_XPATH, searchTerm);
-  await page.keyboard.press("Enter");
-  await page.waitForLoadState("networkidle");
-
-  if (!resultKeyword) {
-    throw new Error("No resultKeyword configured for this category — cannot pick a result to open.");
+async function openAssembly(page, category) {
+  if (!category.scope || !category.mainGroup || !category.assembly) {
+    throw new Error("This category has no verified category-tree path configured yet.");
   }
 
-  // Click a result whose visible text contains the keyword (e.g. "front").
-  // NOTE: this is the least-validated selector in this file — it matches
-  // by page text rather than a stable attribute, since the plain
-  // search-results list didn't expose a clean data-testid the way the
-  // assembly table did (see below). If lookups start opening the wrong
-  // assembly, re-inspect the real result-list rows for a firmer selector.
-  const result = page.getByText(new RegExp(resultKeyword, "i")).first();
-  if ((await result.count()) === 0) {
-    return false;
-  }
-  await result.click();
+  await page.getByText(category.scope, { exact: true }).first().click();
   await page.waitForLoadState("networkidle");
-  return true;
+  console.log(`[debug] clicked scope "${category.scope}"`);
+
+  await page.getByText(category.mainGroup, { exact: true }).first().click();
+  await page.waitForLoadState("networkidle");
+  console.log(`[debug] clicked main group "${category.mainGroup}"`);
+
+  await page.getByText(category.assembly).first().click();
+  await page.waitForLoadState("networkidle");
+  console.log(`[debug] clicked assembly matching ${category.assembly}`);
 }
 
 /**
@@ -175,19 +176,17 @@ async function extractMatchingCandidates(page, descriptionInclude, descriptionEx
 
 /**
  * Look up OE part number candidates for a given VIN and category on
- * Partslink24, trying each known synonym term in turn until one opens an
- * assembly with usable matches.
+ * Partslink24 by walking the catalog's own category tree to the relevant
+ * assembly and reading its parts table.
  *
  * @param {string} vin
  * @param {string} make - vehicle make, e.g. "Peugeot" — used to pick the right brand catalog
- * @param {string} categoryKey - key into CATEGORY_SYNONYMS, e.g. "front_brake_disc"
+ * @param {string} categoryKey - key into PART_CATEGORIES, e.g. "front_brake_disc"
  * @returns {Promise<{
  *   success: boolean,
  *   oeNumber?: string,
  *   candidates?: Array<{ partNo: string, description: string, restrictions: string|null }>,
  *   ambiguous?: boolean,
- *   matchedTerm?: string,
- *   triedTerms?: string[],
  *   error?: string,
  * }>}
  *   `success: true` with a single `oeNumber` means exactly one genuine OE
@@ -201,11 +200,11 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     throw new Error("Partslink24 credentials not configured");
   }
 
-  const category = CATEGORY_SYNONYMS[categoryKey];
-  if (!category || category.searchTerms.length === 0) {
+  const category = PART_CATEGORIES[categoryKey];
+  if (!category) {
     return {
       success: false,
-      error: `No known search terms configured for category "${categoryKey}". Add some to CATEGORY_SYNONYMS.`,
+      error: `Unknown category "${categoryKey}". Add it to PART_CATEGORIES.`,
     };
   }
 
@@ -219,7 +218,6 @@ async function lookupOePartNumber(vin, make, categoryKey) {
   // set a realistic desktop viewport to match a normal browser window.
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const page = await context.newPage();
-  const triedTerms = [];
 
   try {
     // --- LOGIN (once per session) ---
@@ -321,67 +319,41 @@ async function lookupOePartNumber(vin, make, categoryKey) {
     await page.keyboard.press("Enter");
     await page.waitForLoadState("networkidle");
 
-    // --- TRY EACH SYNONYM TERM IN TURN ---
-    for (const term of category.searchTerms) {
-      triedTerms.push(term);
-      await politeDelay(); // be polite between attempts too, not just between calls
+    // --- WALK THE CATEGORY TREE TO THE RIGHT ASSEMBLY ---
+    await openAssembly(page, category);
 
-      const opened = await openAssemblyForTerm(page, term, category.resultKeyword).catch((err) => {
-        console.error(`Partslink24 search failed for term "${term}":`, err);
-        return false;
-      });
-      if (!opened) continue;
+    const candidates = await extractMatchingCandidates(
+      page,
+      category.descriptionInclude,
+      category.descriptionExclude,
+    );
 
-      const candidates = await extractMatchingCandidates(
-        page,
-        category.descriptionInclude,
-        category.descriptionExclude,
-      );
+    if (candidates.length === 1) {
+      return { success: true, oeNumber: candidates[0].partNo, candidates };
+    }
 
-      if (candidates.length === 1) {
-        if (triedTerms.length > 1) {
-          // Worth logging: this term wasn't first in the list but worked.
-          // A real system should feed this back into CATEGORY_SYNONYMS
-          // ordering, or at minimum flag it for review.
-          console.log(`Note: "${term}" matched on attempt ${triedTerms.length} for category "${categoryKey}" — consider promoting it in the synonym list.`);
-        }
-        return {
-          success: true,
-          oeNumber: candidates[0].partNo,
-          matchedTerm: term,
-          candidates,
-          triedTerms,
-        };
-      }
-
-      if (candidates.length > 1) {
-        return {
-          success: false,
-          ambiguous: true,
-          error: `Found ${candidates.length} possible OE numbers for category "${categoryKey}" — needs human review to pick the right one for this vehicle.`,
-          matchedTerm: term,
-          candidates,
-          triedTerms,
-        };
-      }
-      // candidates.length === 0: fall through and try the next term.
+    if (candidates.length > 1) {
+      return {
+        success: false,
+        ambiguous: true,
+        error: `Found ${candidates.length} possible OE numbers for category "${categoryKey}" — needs human review to pick the right one for this vehicle.`,
+        candidates,
+      };
     }
 
     return {
       success: false,
-      error: `No OE part found on Partslink24 after trying: ${triedTerms.join(", ")}`,
-      triedTerms,
+      error: `No OE part matched in the "${category.scope} > ${category.mainGroup}" assembly for category "${categoryKey}".`,
     };
   } catch (err) {
     console.error("Partslink24 lookup failed:", err);
     return {
       success: false,
       error: "Partslink24 lookup failed — see server logs for details.",
-      triedTerms,
     };
   } finally {
     await browser.close();
   }
 }
 
-module.exports = { lookupOePartNumber, CATEGORY_SYNONYMS };
+module.exports = { lookupOePartNumber, PART_CATEGORIES };

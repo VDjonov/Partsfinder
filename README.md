@@ -11,13 +11,10 @@ given a Motorcheck-format vehicle data dump.
 2. Install the headless browser Playwright needs:
    npx playwright install chromium
 
-3. `front_brake_disc` selectors are filled in and verified against the
-   real, logged-in Partslink24 portal. Any other category key you add to
-   CATEGORY_SYNONYMS in `partslink24-worker.js` needs the same treatment:
-   log in yourself, search that category, inspect the result list and
-   the assembly page it opens, and fill in `resultKeyword` /
-   `descriptionInclude` / `descriptionExclude` for it (see the comments
-   above CATEGORY_SYNONYMS).
+3. `front_brake_disc` is filled in and verified against the real,
+   logged-in Partslink24 portal. Any other category key you add to
+   PART_CATEGORIES in `partslink24-worker.js` needs the same treatment —
+   see "Adding more part categories" below.
 
 4. Set your credentials as environment variables (the portal login form
    has three fields — Company ID / partslink24 ID, User name, Password):
@@ -32,22 +29,26 @@ given a Motorcheck-format vehicle data dump.
 This will:
 - Parse the vehicle data in sample-vehicle.txt (already includes the
   Peugeot 5008 / VIN VF30E9HZHAS110949 example)
-- Extract the VIN
-- Log into Partslink24, search that VIN, then search for a front brake
-  disc, trying each synonym term in CATEGORY_SYNONYMS until one opens
-  an assembly with a usable match
+- Extract the VIN and make
+- Log into Partslink24, open that make's catalog from the dashboard,
+  search the VIN, then walk the catalog's category tree to the relevant
+  assembly (e.g. Mechanical > Braking > Front brakes) and read its parts
 - Print the result as JSON
 
 The result is one of:
-- `{ success: true, oeNumber, candidates, matchedTerm, triedTerms }` —
-  exactly one genuine OE part matched.
+- `{ success: true, oeNumber, candidates }` — exactly one genuine OE part
+  matched.
 - `{ success: false, ambiguous: true, candidates, ... }` — more than one
   non-alternate-brand part matched (e.g. different engine/trim variants
   of the same position). Only a human with the actual vehicle/engine in
   front of them can safely pick the right one from `candidates` — the
   tool never guesses in this case.
-- `{ success: false, error, triedTerms }` — no match found for any
-  synonym term.
+- `{ success: false, error }` — nothing matched in that assembly.
+
+Note the tool deliberately ignores the site's own free-text parts search:
+it word-matches too loosely to trust (searching "front brake disc"
+returns a rear disc protector, brake hoses and wheel hubs, but no front
+brake disc).
 
 ## Adding your own vehicle
 
@@ -56,8 +57,9 @@ sample-vehicle.txt) and pass that filename instead.
 
 ## Adding more part categories
 
-Edit CATEGORY_SYNONYMS in partslink24-worker.js — add a new key with
-`searchTerms`, then verify `resultKeyword`, `descriptionInclude`, and
-`descriptionExclude` against the real site the same way front_brake_disc
-was (search the term, inspect the result list, inspect the assembly it
-opens).
+Edit PART_CATEGORIES in partslink24-worker.js. Walk the catalog to that
+part manually first, noting the three labels you clicked (`scope`,
+`mainGroup`, `assembly` — e.g. Mechanical / Braking / "FRONT BRAKES DISC
+CALIPER FRICTION PAD"), then set `descriptionInclude` and
+`descriptionExclude` to isolate the specific part within that assembly's
+rows. Watch the catalog's own spelling — it writes "DISKS", not "discs".

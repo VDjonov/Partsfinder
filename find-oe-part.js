@@ -16,14 +16,14 @@
 
 const fs = require("fs");
 const { parseVehicleData } = require("./parse-vehicle");
-const { lookupOePartNumber, CATEGORY_SYNONYMS } = require("./partslink24-worker");
+const { lookupOePartNumber, PART_CATEGORIES } = require("./partslink24-worker");
 
 async function main() {
   const [, , filePath, categoryKey] = process.argv;
 
   if (!filePath || !categoryKey) {
     console.error("Usage: node find-oe-part.js <vehicle-data-file> <category-key>");
-    console.error(`Known category keys: ${Object.keys(CATEGORY_SYNONYMS).join(", ")}`);
+    console.error(`Known category keys: ${Object.keys(PART_CATEGORIES).join(", ")}`);
     process.exit(1);
   }
 
