@@ -136,10 +136,11 @@ async function findPart(vin, make, partQuery) {
       path,
     };
   } catch (err) {
-    console.error("Lookup failed:", err);
+    console.error("Lookup failed:", err.message);
     await page.screenshot({ path: "debug-failure.png", fullPage: true }).catch(() => {});
-    console.error("Saved a screenshot of the failing page to debug-failure.png");
-    return { success: false, error: "Lookup failed — see logs and debug-failure.png.", path };
+    // Errors raised deliberately (a bad API key, a missing option) already
+    // say what to do; only browser-level failures need the screenshot.
+    return { success: false, error: err.message || "Lookup failed — see debug-failure.png.", path };
   } finally {
     await browser.close();
   }

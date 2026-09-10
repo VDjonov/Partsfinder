@@ -23,6 +23,33 @@ const NONE = "NONE";
 
 const client = new Anthropic();
 
+/**
+ * Turn SDK errors into something a person at a parts counter can act on.
+ * Left to itself the SDK throws a stack trace with HTTP headers in it,
+ * which tells them nothing about what to do next.
+ */
+async function callClaude(request) {
+  try {
+    return await client.messages.parse(request);
+  } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError) {
+      throw new Error(
+        "Anthropic API key is missing or invalid. Set ANTHROPIC_API_KEY to a key from console.anthropic.com, then restart.",
+      );
+    }
+    if (err instanceof Anthropic.RateLimitError) {
+      throw new Error("Anthropic rate limit hit — wait a moment and try again.");
+    }
+    if (err instanceof Anthropic.APIConnectionError) {
+      throw new Error("Could not reach the Anthropic API — check the network connection.");
+    }
+    if (err instanceof Anthropic.APIError) {
+      throw new Error(`Anthropic API error ${err.status}: ${err.message}`);
+    }
+    throw err;
+  }
+}
+
 const ChoiceSchema = z.object({
   choice: z.string(),
   confidence: z.enum(["high", "medium", "low"]),
@@ -45,7 +72,7 @@ const PartChoiceSchema = z.object({
  * @returns {Promise<{choice: string|null, confidence: string, reasoning: string}>}
  */
 async function chooseCategory(partQuery, columnName, options) {
-  const response = await client.messages.parse({
+  const response = await callClaude({
     model: MODEL,
     max_tokens: 16000,
     system:
@@ -87,7 +114,7 @@ async function chooseCategory(partQuery, columnName, options) {
  * @param {Array<{partNo: string, description: string, remark: string|null}>} parts
  */
 async function choosePart(partQuery, parts) {
-  const response = await client.messages.parse({
+  const response = await callClaude({
     model: MODEL,
     max_tokens: 16000,
     system:
