@@ -86,11 +86,15 @@ const CATEGORY_SYNONYMS = {
 // Real selectors, found by inspecting the live portal.
 //
 // Login lands you on partslink24.com/portal-ui — a brand-selection
-// dashboard, NOT a specific vehicle's catalog. That page has its own
-// "Chassis number" search box; submitting a VIN there navigates into the
-// correct brand's catalog page (e.g. pl24-app/peugeot_parts/<vin>/0/vehicle),
-// which is where the "Search for parts" box below actually lives.
-const VIN_INPUT_SELECTOR = 'input[placeholder="Chassis number"]';
+// dashboard, NOT a specific vehicle's catalog. Clicking a brand tile
+// there opens that brand's own catalog page, which shows a "Demo"
+// watermark and its own VIN box (placeholder "Direct entry" — a
+// different element from the dashboard's "Chassis number" box, and the
+// only one we actually need since we always select the brand first).
+// Once a real VIN is searched there, the Demo watermark disappears and
+// it becomes the real vehicle-specific catalog — that's where the
+// "Search for parts" box below lives.
+const VIN_INPUT_SELECTOR = 'input[placeholder="Direct entry"]';
 const SEARCH_PARTS_INPUT_XPATH =
   "xpath=/html/body/div[1]/div/div[3]/header/div/div/div/div[1]/div/div[2]/div/div/div/input";
 
